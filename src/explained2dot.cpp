@@ -5,6 +5,7 @@
 #include <map>
 #include <algorithm>
 #include <cctype>
+#include <sstream>
 
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/predicate.hpp>
@@ -14,6 +15,34 @@
 using namespace std;
 
 namespace e2d {
+
+#define THROW_ERROR(MESSAGE, LINE) {                                                \
+    string filename(__FILE__);                                                      \
+    auto filesub = filename.substr(filename.rfind('/') + 1);                        \
+    std::stringstream ss;                                                           \
+    ss << "[ERROR @ " << filesub << ':' << LINE << "] " << MESSAGE << endl;         \
+    throw runtime_error(ss.str());                                                  \
+}
+
+#define THROW_ERROR2(ROOT_EXC, MESSAGE, LINE) {                                     \
+    string filename(__FILE__);                                                      \
+    auto filesub = filename.substr(filename.rfind('/') + 1);                        \
+    std::stringstream ss;                                                           \
+    ss << "[ERROR @ " << filesub << ':' << LINE << "] " << MESSAGE << endl;         \
+    auto rootExcMsg = ROOT_EXC.what();                                              \
+    ss << "Root Exception: " << (rootExcMsg != nullptr ? rootExcMsg : "");          \
+    throw runtime_error(ss.str());                                                  \
+}
+
+#define PRINT_ERROR_ON(PREDICATE, MESSAGE, LINE)                                    \
+if (PREDICATE) {                                                                    \
+    string filename(__FILE__);                                                      \
+    auto filesub = filename.substr(filename.rfind('/') + 1);                        \
+    std::stringstream ss;                                                           \
+    ss << "[ERROR @ " << filesub << ':' << LINE << "] " << MESSAGE << endl;         \
+    std::cerr << ss.str();                                                          \
+    return LINE;                                                                    \
+}
 
 ///////////////////////////////
 // CMDLINE ARGUMENT PARSING  //
@@ -47,9 +76,7 @@ namespace e2d {
             char** argv,
             int nArg) {
         if (argv == nullptr) {
-            stringstream ss;
-            ss << "Parameter \"" << name << "\" requires an additional integer value!";
-            throw runtime_error(ss.str());
+            THROW_ERROR("Parameter \"" << name << "\" requires an additional integer value!", __LINE__);
         }
         string str(argv[nArg]);
         size_t idx = string::npos;
@@ -57,14 +84,10 @@ namespace e2d {
         try {
             value = stoul(str, &idx);
         } catch (invalid_argument& exc) {
-            stringstream ss;
-            ss << "Value for parameter \"" << name << "\" is not an integer (is \"" << str << "\")!";
-            throw runtime_error(ss.str());
+            THROW_ERROR2(exc, "Value for parameter \"" << name << "\" is not an integer (is \"" << str << "\")!", __LINE__)
         }
         if (idx < str.length()) {
-            stringstream ss;
-            ss << "Value for parameter \"" << name << "\" is not an integer (is \"" << str << "\")!";
-            throw runtime_error(ss.str());
+            THROW_ERROR("Value for parameter \"" << name << "\" is not an integer (is \"" << str << "\")!", __LINE__)
         }
         cmdIntArgs[name] = value;
         return 1;
@@ -75,9 +98,7 @@ namespace e2d {
             char** argv,
             int nArg) {
         if (argv == nullptr) {
-            stringstream ss;
-            ss << "Parameter \"" << name << "\" requires an additional string value!";
-            throw runtime_error(ss.str());
+            THROW_ERROR("Parameter \"" << name << "\" requires an additional string value!", __LINE__)
         }
         cmdStrArgs[name] = argv[nArg];
         return 1;
@@ -120,18 +141,14 @@ namespace e2d {
                     if (p.first.compare(argv[nArg]) == 0) {
                         recognized = true;
                         if ((nArg + 1) >= argc) {
-                            stringstream ss;
-                            ss << "Required value for parameter \"" << argv[nArg] << "\" missing!";
-                            throw runtime_error(ss.str());
+                            THROW_ERROR("Required value for parameter \"" << argv[nArg] << "\" missing!", __LINE__)
                         }
                         nArg += parsearg(p.first, p.second, nArg < argc ? argv : nullptr, nArg + 1);
                         break;
                     }
                 }
                 if (!recognized) {
-                    stringstream ss;
-                    ss << "Parameter \"" << argv[nArg] << "\" is unknown!";
-                    throw runtime_error(ss.str());
+                    THROW_ERROR("Parameter \"" << argv[nArg] << "\" is unknown!", __LINE__)
                 }
             }
         }
@@ -186,14 +203,6 @@ namespace e2d {
     map<id_t, id_t> reassign;
     list<id_t> values;
     map<id_t, id_t> valueAssign;
-
-#define myErrorOn(predicate, message, line)                                         \
-if (predicate) {                                                                    \
-    string filename(__FILE__);                                                      \
-    auto filesub = filename.substr(filename.rfind('/') + 1);                        \
-    cerr << "[ERROR @ " << filesub << ':' << line << "] " << message << endl;       \
-    return line;                                                                    \
-}
 
 /// FROM HERE taken from the answer from
 /// http://stackoverflow.com/questions/216823/whats-the-best-way-to-trim-stdstring
@@ -270,7 +279,7 @@ if (predicate) {                                                                
                     hasType = true;
                     if (pos3 < pos2) { // bat or other composite type
                         pos2 = s.find(']', pos3);
-                        myErrorOn(pos2 == string::npos, "Did not find finalizing ']' on line " << line, __LINE__);
+                        PRINT_ERROR_ON(pos2 == string::npos, "Did not find finalizing ']' on line " << line, __LINE__);
                         type = s.substr(pos + 1, pos2 - pos); // the whole bat type
                     } else { // Simple type with type information
                         type = s.substr(pos + 1, (pos2 == string::npos) ? (s.size() - pos - 2) : (pos2 - pos - 1));
@@ -282,7 +291,7 @@ if (predicate) {                                                                
                 if (!::e2d::ignore(name)) {
                     if (isIn) {
                         auto iter = namesToIDs.find(name);
-                        myErrorOn(iter == namesToIDs.end(), "No ID for name \"" << name << '"', __LINE__);
+                        PRINT_ERROR_ON(iter == namesToIDs.end(), "No ID for name \"" << name << '"', __LINE__);
                         nodeIn.insert(make_pair(nodeID, iter->second)); // nodeIn[nodeID].push_back(iter->second);
                     } else {
                         id_t id = nextID();
@@ -386,27 +395,27 @@ if (predicate) {                                                                
             s = trim(splitVec[1]);
         }
         pos = s.find(FIND_ROOT);
-        myErrorOn(pos == string::npos, "Could not find root node \"" << FIND_ROOT << "\" in String\n\t" << s, __LINE__);
+        PRINT_ERROR_ON(pos == string::npos, "Could not find root node \"" << FIND_ROOT << "\" in String\n\t" << s, __LINE__);
         pos += FIND_ROOT_LEN;
         end = s.find(FIND_ROOT_OPTIONS, pos);
         string rootName;
         if (end == string::npos) {
             // No options
             end = s.find(FIND_ROOT_VARS, pos);
-            myErrorOn(end == string::npos, "Could not find variables section of root function", __LINE__);
+            PRINT_ERROR_ON(end == string::npos, "Could not find variables section of root function", __LINE__);
             rootName = s.substr(pos, end - pos);
         } else {
             rootName = s.substr(pos, end - pos);
             pos = end + 1;
             end = s.find(FIND_ROOT_OPTIONS_END, pos);
-            myErrorOn(end == string::npos, "Could not determine name of root node, while searching for \"" << FIND_ROOT_OPTIONS << "\" in String\n\t" << s, __LINE__);
+            PRINT_ERROR_ON(end == string::npos, "Could not determine name of root node, while searching for \"" << FIND_ROOT_OPTIONS << "\" in String\n\t" << s, __LINE__);
         }
         trim(rootName);
         pos = s.find(FIND_ROOT_VARS, end);
-        myErrorOn(pos == string::npos, "Could not find variables section of root function", __LINE__);
+        PRINT_ERROR_ON(pos == string::npos, "Could not find variables section of root function", __LINE__);
         ++pos;
         end = s.find(FIND_ROOT_VARS_END, pos);
-        myErrorOn(pos == string::npos, "Root function variables do not terminate on the same line. This is not yet supported :-(", __LINE__);
+        PRINT_ERROR_ON(pos == string::npos, "Root function variables do not terminate on the same line. This is not yet supported :-(", __LINE__);
         vector<string> variables;
         string variablesString = s.substr(pos, end - pos);
         boost::split(variables, variablesString, boost::is_any_of(","), boost::token_compress_on);
@@ -488,7 +497,7 @@ if (predicate) {                                                                
                 namesToIDs[left] = nodeID;
                 if (nodeLabel.find('@') == string::npos) {
                     // Reassignment
-                    myErrorOn(namesToIDs.find(nodeLabel) == namesToIDs.end(), " No ID for argument \"" << nodeLabel << '"', __LINE__);
+                    PRINT_ERROR_ON(namesToIDs.find(nodeLabel) == namesToIDs.end(), " No ID for argument \"" << nodeLabel << '"', __LINE__);
                     id_t srcID = namesToIDs[nodeLabel];
                     reassign[srcID] = nodeID;
                 } else {
@@ -521,9 +530,9 @@ if (predicate) {                                                                
                 cout << "];\n";
 
                 // first parse arguments = right (in) then return values = left (out)
-                myErrorOn(parse(nodeID, nodeArgs, true, i + 1) != 0, " parse node arguments on line " << (i + 1), __LINE__);
+                PRINT_ERROR_ON(parse(nodeID, nodeArgs, true, i + 1) != 0, " parse node arguments on line " << (i + 1), __LINE__);
                 if (!isSqlResultSet) {
-                    myErrorOn(parse(nodeID, left, false, i + 1) != 0, " parse node return values", __LINE__);
+                    PRINT_ERROR_ON(parse(nodeID, left, false, i + 1) != 0, " parse node return values", __LINE__);
                 }
             }
         }
@@ -531,7 +540,7 @@ if (predicate) {                                                                
         // exclude nodes
         if (CONFIG.DO_EXCLUDE_MVC) {
             // don't throw an error since we want to ignore it anyways
-            myErrorOn(mvcID == INVALID_ID, "no " << FIND_SQL_MVC << " node found!", __LINE__);
+            PRINT_ERROR_ON(mvcID == INVALID_ID, "no " << FIND_SQL_MVC << " node found!", __LINE__);
             id_t mvcOutID = nodeOut.find(mvcID)->second;
             auto iter = nodeIn.begin();
             while (iter != nodeIn.end()) {
