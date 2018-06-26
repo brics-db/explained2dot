@@ -44,7 +44,6 @@ namespace e2d {
 
     size_t parseint(
             const string& name,
-            int __attribute__((unused)) argc,
             char** argv,
             int nArg) {
         if (argv == nullptr) {
@@ -73,7 +72,6 @@ namespace e2d {
 
     size_t parsestr(
             const string& name,
-            int __attribute__((unused)) argc,
             char** argv,
             int nArg) {
         if (argv == nullptr) {
@@ -86,10 +84,7 @@ namespace e2d {
     }
 
     size_t parsebool(
-            const string& name,
-            __attribute__((unused)) int argc,
-            __attribute__((unused)) char** argv,
-            __attribute__((unused)) int nArg) {
+            const string& name) {
         cmdBoolArgs[name] = true;
         return 0;
     }
@@ -97,18 +92,17 @@ namespace e2d {
     size_t parsearg(
             const string& name,
             cmdargtype_t argtype,
-            int argc,
             char** argv,
             int nArg) {
         switch (argtype) {
             case argint:
-                return parseint(name, argc, argv, nArg);
+                return parseint(name, argv, nArg);
 
             case argstr:
-                return parsestr(name, argc, argv, nArg);
+                return parsestr(name, argv, nArg);
 
             case argbool:
-                return parsebool(name, argc, argv, nArg);
+                return parsebool(name);
         }
         return 0;
     }
@@ -130,7 +124,7 @@ namespace e2d {
                             ss << "Required value for parameter \"" << argv[nArg] << "\" missing!";
                             throw runtime_error(ss.str());
                         }
-                        nArg += parsearg(p.first, p.second, argc, (nArg + 1) <= argc ? argv : nullptr, nArg + 1);
+                        nArg += parsearg(p.first, p.second, nArg < argc ? argv : nullptr, nArg + 1);
                         break;
                     }
                 }
@@ -161,7 +155,7 @@ namespace e2d {
     const list<string> IGNORED_NAMES = {"nil", "true", "false"};
     const list<string> IGNORED_OPERATORS = {"querylog.define", "language.dataflow", "language.pass"};
     const list<string> IGNORED_LINES_BEGINS = {"+", "mal", "barrier ", "exit ", "end "};
-    const map<string, string> COLORIZE_PREFIX = { {"algebra", "cyan"}, {"aggr", "green"}, {"batcalc", "gold"}, {"group", "orangered"}};
+    const map<string, string> COLORIZE_PREFIX = { {"algebra", "cyan"}, {"aggr", "green"}, {"batcalc", "gold"}, {"group", "orangered"}, {"sql", "gainsboro"}, {"bat", "peachpuff"}};
 
     bool is_number(
             const string& s) {
