@@ -5,155 +5,16 @@
 #include <map>
 #include <algorithm>
 #include <cctype>
-#include <sstream>
 
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/iostreams/device/mapped_file.hpp>
 
-using namespace std;
+#include "common.hpp"
+#include "config.hpp"
 
 namespace e2d {
-
-#define THROW_ERROR(MESSAGE, LINE) {                                                \
-    string filename(__FILE__);                                                      \
-    auto filesub = filename.substr(filename.rfind('/') + 1);                        \
-    std::stringstream ss;                                                           \
-    ss << "[ERROR @ " << filesub << ':' << LINE << "] " << MESSAGE << endl;         \
-    throw runtime_error(ss.str());                                                  \
-}
-
-#define THROW_ERROR2(ROOT_EXC, MESSAGE, LINE) {                                     \
-    string filename(__FILE__);                                                      \
-    auto filesub = filename.substr(filename.rfind('/') + 1);                        \
-    std::stringstream ss;                                                           \
-    ss << "[ERROR @ " << filesub << ':' << LINE << "] " << MESSAGE << endl;         \
-    auto rootExcMsg = ROOT_EXC.what();                                              \
-    ss << "Root Exception: " << (rootExcMsg != nullptr ? rootExcMsg : "");          \
-    throw runtime_error(ss.str());                                                  \
-}
-
-#define PRINT_ERROR_ON(PREDICATE, MESSAGE, LINE)                                    \
-if (PREDICATE) {                                                                    \
-    string filename(__FILE__);                                                      \
-    auto filesub = filename.substr(filename.rfind('/') + 1);                        \
-    std::stringstream ss;                                                           \
-    ss << "[ERROR @ " << filesub << ':' << LINE << "] " << MESSAGE << endl;         \
-    std::cerr << ss.str();                                                          \
-    return LINE;                                                                    \
-}
-
-///////////////////////////////
-// CMDLINE ARGUMENT PARSING  //
-///////////////////////////////
-    map<string, size_t> cmdIntArgs = {};
-
-    map<string, string> cmdStrArgs = {};
-
-    map<string, bool> cmdBoolArgs = { {"--help", false}, {"-h", false}, {"-?", false}, {"--exclude-mvc", false}};
-
-    enum cmdargtype_t {
-        argint,
-        argstr,
-        argbool
-    };
-
-    map<string, cmdargtype_t> cmdArgTypes = { {"--help", argbool}, {"-h", argbool}, {"-?", argbool}, {"--exclude-mvc", argbool}};
-
-    struct config_t {
-        bool DO_EXCLUDE_MVC;
-        bool HELP;
-
-        config_t()
-                : DO_EXCLUDE_MVC(cmdBoolArgs["--exclude-mvc"]),
-                  HELP(cmdBoolArgs["--help"] | cmdBoolArgs["-h"] | cmdBoolArgs["-?"]) {
-        }
-    };
-
-    size_t parseint(
-            const string& name,
-            char** argv,
-            int nArg) {
-        if (argv == nullptr) {
-            THROW_ERROR("Parameter \"" << name << "\" requires an additional integer value!", __LINE__);
-        }
-        string str(argv[nArg]);
-        size_t idx = string::npos;
-        size_t value;
-        try {
-            value = stoul(str, &idx);
-        } catch (invalid_argument& exc) {
-            THROW_ERROR2(exc, "Value for parameter \"" << name << "\" is not an integer (is \"" << str << "\")!", __LINE__)
-        }
-        if (idx < str.length()) {
-            THROW_ERROR("Value for parameter \"" << name << "\" is not an integer (is \"" << str << "\")!", __LINE__)
-        }
-        cmdIntArgs[name] = value;
-        return 1;
-    }
-
-    size_t parsestr(
-            const string& name,
-            char** argv,
-            int nArg) {
-        if (argv == nullptr) {
-            THROW_ERROR("Parameter \"" << name << "\" requires an additional string value!", __LINE__)
-        }
-        cmdStrArgs[name] = argv[nArg];
-        return 1;
-    }
-
-    size_t parsebool(
-            const string& name) {
-        cmdBoolArgs[name] = true;
-        return 0;
-    }
-
-    size_t parsearg(
-            const string& name,
-            cmdargtype_t argtype,
-            char** argv,
-            int nArg) {
-        switch (argtype) {
-            case argint:
-                return parseint(name, argv, nArg);
-
-            case argstr:
-                return parsestr(name, argv, nArg);
-
-            case argbool:
-                return parsebool(name);
-        }
-        return 0;
-    }
-
-    config_t initConfig(
-            int argc,
-            char** argv) {
-        if (argc > 1) {
-            for (int nArg = 1; nArg < argc; ++nArg) {
-                if (argv[nArg][0] != '-') {
-                    continue;
-                }
-                bool recognized = false;
-                for (auto p : cmdArgTypes) {
-                    if (p.first.compare(argv[nArg]) == 0) {
-                        recognized = true;
-                        if ((nArg + 1) >= argc) {
-                            THROW_ERROR("Required value for parameter \"" << argv[nArg] << "\" missing!", __LINE__)
-                        }
-                        nArg += parsearg(p.first, p.second, nArg < argc ? argv : nullptr, nArg + 1);
-                        break;
-                    }
-                }
-                if (!recognized) {
-                    THROW_ERROR("Parameter \"" << argv[nArg] << "\" is unknown!", __LINE__)
-                }
-            }
-        }
-        return config_t();
-    }
 
 ///////////////////////////////
 // EXPLAINED-2-DOT           //
@@ -169,19 +30,19 @@ if (PREDICATE) {                                                                
     const char* const SQL_ASSIGN = " := ";
     const size_t SQL_ASSIGN_LEN = strlen(SQL_ASSIGN);
     const char* const SQL_RESULT_SET = "sql.resultSet";
-    const list<string> IGNORED_NAMES = {"nil", "true", "false"};
-    const list<string> IGNORED_OPERATORS = {"querylog.define", "language.dataflow", "language.pass"};
-    const list<string> IGNORED_LINES_BEGINS = {"+", "mal", "barrier ", "exit ", "end "};
-    const map<string, string> COLORIZE_PREFIX = { {"algebra", "cyan"}, {"aggr", "green"}, {"batcalc", "gold"}, {"group", "orangered"}, {"sql", "gainsboro"}, {"bat", "peachpuff"}};
+    const std::list<std::string> IGNORED_NAMES = {"nil", "true", "false"};
+    const std::list<std::string> IGNORED_OPERATORS = {"querylog.define", "language.dataflow", "language.pass"};
+    const std::list<std::string> IGNORED_LINES_BEGINS = {"+", "mal", "barrier ", "exit ", "end "};
+    const std::map<std::string, std::string> COLORIZE_PREFIX = { {"algebra", "cyan"}, {"aggr", "green"}, {"batcalc", "gold"}, {"group", "orangered"}, {"sql", "gainsboro"}, {"bat", "peachpuff"}};
 
     bool is_number(
-            const string& s) {
+            const std::string& s) {
         return !s.empty() && find_if(s.begin(), s.end(), [](char c) {
             return !isdigit(c);}) == s.end();
     }
 
     bool ignore(
-            string& name) {
+            std::string& name) {
         return ((boost::starts_with(name, "\"") && boost::ends_with(name, "\"")) || (boost::starts_with(name, "'") && boost::ends_with(name, "'"))
                 || (find(IGNORED_NAMES.begin(), IGNORED_NAMES.end(), name) != IGNORED_NAMES.end()) || is_number(name));
     }
@@ -193,16 +54,16 @@ if (PREDICATE) {                                                                
         return id++;
     }
 
-    map<id_t, string> idsToNames;
-    map<string, id_t> namesToIDs;
-    map<id_t, string> idType;
+    std::map<id_t, std::string> idsToNames;
+    std::map<std::string, id_t> namesToIDs;
+    std::map<id_t, std::string> idType;
 
-    list<id_t> nodes;
-    multimap<id_t, id_t> nodeIn;
-    multimap<id_t, id_t> nodeOut;
-    map<id_t, id_t> reassign;
-    list<id_t> values;
-    map<id_t, id_t> valueAssign;
+    std::list<id_t> nodes;
+    std::multimap<id_t, id_t> nodeIn;
+    std::multimap<id_t, id_t> nodeOut;
+    std::map<id_t, id_t> reassign;
+    std::list<id_t> values;
+    std::map<id_t, id_t> valueAssign;
 
 /// FROM HERE taken from the answer from
 /// http://stackoverflow.com/questions/216823/whats-the-best-way-to-trim-stdstring
@@ -237,13 +98,13 @@ if (PREDICATE) {                                                                
 /// UNTIL HERE
     const char* const TRIM_ARGS = " \t\n\r\f\v |;";
 
-    string& replaceInString(
-            string& s,
+    std::string& replaceInString(
+            std::string& s,
             char src,
             char dest) {
         if (src != dest) {
             size_t pos = s.find(src);
-            while (pos != string::npos) {
+            while (pos != std::string::npos) {
                 s.replace(pos, 1, 1, dest);
                 pos = s.find(src, pos);
             }
@@ -253,14 +114,14 @@ if (PREDICATE) {                                                                
 
     size_t parse(
             id_t nodeID,
-            string& s,
+            std::string& s,
             bool isIn,
             size_t line) {
         size_t beg = 0, pos = 0, pos2 = 0, pos3 = 0;
-        string name, type;
+        std::string name, type;
         bool hasType;
         if (s[0] == '(') {
-            pos2 = string::npos;
+            pos2 = std::string::npos;
             beg = 1;
             do {
                 if (s[beg] == ')') {
@@ -271,7 +132,7 @@ if (PREDICATE) {                                                                
                 hasType = false;
                 pos2 = s.find(',', beg);
                 pos = s.find(':', beg);
-                if (pos == string::npos && pos2 == string::npos) { // Simple type remaining
+                if (pos == std::string::npos && pos2 == std::string::npos) { // Simple type remaining
                     name = s.substr(beg, s.size() - beg - 1);
                 } else if (pos < pos2) { // Type information
                     name = s.substr(beg, pos - beg);
@@ -279,10 +140,10 @@ if (PREDICATE) {                                                                
                     hasType = true;
                     if (pos3 < pos2) { // bat or other composite type
                         pos2 = s.find(']', pos3);
-                        PRINT_ERROR_ON(pos2 == string::npos, "Did not find finalizing ']' on line " << line, __LINE__);
+                        PRINT_ERROR_ON(pos2 == std::string::npos, "Did not find finalizing ']' on line " << line, __LINE__);
                         type = s.substr(pos + 1, pos2 - pos); // the whole bat type
                     } else { // Simple type with type information
-                        type = s.substr(pos + 1, (pos2 == string::npos) ? (s.size() - pos - 2) : (pos2 - pos - 1));
+                        type = s.substr(pos + 1, (pos2 == std::string::npos) ? (s.size() - pos - 2) : (pos2 - pos - 1));
                     }
                 } else { // Simple type without type information
                     name = s.substr(beg, pos2 - beg);
@@ -292,7 +153,7 @@ if (PREDICATE) {                                                                
                     if (isIn) {
                         auto iter = namesToIDs.find(name);
                         PRINT_ERROR_ON(iter == namesToIDs.end(), "No ID for name \"" << name << '"', __LINE__);
-                        nodeIn.insert(make_pair(nodeID, iter->second)); // nodeIn[nodeID].push_back(iter->second);
+                        nodeIn.insert(std::make_pair(nodeID, iter->second)); // nodeIn[nodeID].push_back(iter->second);
                     } else {
                         id_t id = nextID();
                         idsToNames[id] = name;
@@ -300,11 +161,11 @@ if (PREDICATE) {                                                                
                         if (hasType) {
                             idType[id] = type;
                         }
-                        nodeOut.insert(make_pair(nodeID, id)); //nodeOut[nodeID].push_back(id);
+                        nodeOut.insert(std::make_pair(nodeID, id)); //nodeOut[nodeID].push_back(id);
                     }
                 }
-                beg = pos2 == string::npos ? string::npos : pos2 + 1;
-            } while ((beg != string::npos) && ((pos != string::npos) || (pos2 != string::npos)));
+                beg = pos2 == std::string::npos ? std::string::npos : pos2 + 1;
+            } while ((beg != std::string::npos) && ((pos != std::string::npos) || (pos2 != std::string::npos)));
         } else {
             pos = s.find(':');
             id_t id = nextID();
@@ -312,11 +173,11 @@ if (PREDICATE) {                                                                
             trim(name);
             idsToNames[id] = name;
             namesToIDs[name] = id;
-            if (pos != string::npos) { // type information
+            if (pos != std::string::npos) { // type information
                 idType[id] = s.substr(pos + 1);
             }
             // isIn ? nodeIn[nodeID].push_back(id) : nodeOut[nodeID].push_back(id);
-            isIn ? nodeIn.insert(make_pair(nodeID, id)) : nodeOut.insert(make_pair(nodeID, id));
+            isIn ? nodeIn.insert(std::make_pair(nodeID, id)) : nodeOut.insert(std::make_pair(nodeID, id));
         }
         return 0;
     }
@@ -326,8 +187,11 @@ if (PREDICATE) {                                                                
             char** argv) {
         config_t CONFIG;
         try {
-            CONFIG = initConfig(argc, argv);
-        } catch (runtime_error&) {
+            CONFIG.init(argc, argv);
+        } catch (std::runtime_error & exc) {
+            if (exc.what()) {
+                std::cerr << exc.what() << std::endl;
+            }
             CONFIG.HELP = true;
         }
 
@@ -336,7 +200,7 @@ if (PREDICATE) {                                                                
         ///////////////////////
         if (argc == 1 || CONFIG.HELP) {
             boost::filesystem::path p(argv[0]);
-            cerr << "Usage: " << p.filename() << " [-?|-h|--help] [--exclude-mvc] <explained file>\n\tOnly works for MonetDB!" << endl;
+            std::cerr << "Usage: " << p.filename() << " [-?|-h|--help] [--exclude-mvc] <explained file>\n\tOnly works for MonetDB!" << std::endl;
             return 1;
         }
         boost::filesystem::path pathIn(argv[argc - 1]);
@@ -345,17 +209,17 @@ if (PREDICATE) {                                                                
         ///////////////////////////////////////
         // Read file and remove unused lines //
         ///////////////////////////////////////
-        vector<string> linesVec;
+        std::vector<std::string> linesVec;
         char* fileContents = file.data();
         boost::split(linesVec, fileContents, boost::is_any_of("\r\n"), boost::token_compress_on);
-        vector<string> splitVec;
+        std::vector<std::string> splitVec;
         for (auto iter = linesVec.begin(); iter != linesVec.end();) {
-            string& s = *iter;
+            std::string& s = *iter;
             trim(s);
             ++iter;
             while (iter != linesVec.end() && iter->size() > 0 && iter->at(0) == ':') {
-                string& s2 = *iter++;
-                string s3 = s2.substr(2, s2.size() - 4);
+                std::string& s2 = *iter++;
+                std::string s3 = s2.substr(2, s2.size() - 4);
                 s.append(trim(s3));
             }
             if (s.size()) {
@@ -369,7 +233,7 @@ if (PREDICATE) {                                                                
                 // bool isNotIgnoredOp = (find_if(IGNORED_OPERATORS.begin(), IGNORED_OPERATORS.end(), [&](string sComp) { return s.find(sComp) == string::npos; }) == IGNORED_OPERATORS.end());
                 bool isNotIgnoredOp = true;
                 for (auto iter : IGNORED_OPERATORS) {
-                    isNotIgnoredOp &= (s.find(iter) == string::npos);
+                    isNotIgnoredOp &= (s.find(iter) == std::string::npos);
                 }
                 if (isNotIgnoredLine && isNotIgnoredOp) {
                     splitVec.push_back(s);
@@ -390,34 +254,34 @@ if (PREDICATE) {                                                                
         ////////////////////////////////////////////////////
         // Retreive function name, options, and variables //
         ////////////////////////////////////////////////////
-        string &s = trim(splitVec[0]);
-        if (s.find("auto commit") != string::npos) {
+        std::string &s = trim(splitVec[0]);
+        if (s.find("auto commit") != std::string::npos) {
             s = trim(splitVec[1]);
         }
         pos = s.find(FIND_ROOT);
-        PRINT_ERROR_ON(pos == string::npos, "Could not find root node \"" << FIND_ROOT << "\" in String\n\t" << s, __LINE__);
+        PRINT_ERROR_ON(pos == std::string::npos, "Could not find root node \"" << FIND_ROOT << "\" in String\n\t" << s, __LINE__);
         pos += FIND_ROOT_LEN;
         end = s.find(FIND_ROOT_OPTIONS, pos);
-        string rootName;
-        if (end == string::npos) {
+        std::string rootName;
+        if (end == std::string::npos) {
             // No options
             end = s.find(FIND_ROOT_VARS, pos);
-            PRINT_ERROR_ON(end == string::npos, "Could not find variables section of root function", __LINE__);
+            PRINT_ERROR_ON(end == std::string::npos, "Could not find variables section of root function", __LINE__);
             rootName = s.substr(pos, end - pos);
         } else {
             rootName = s.substr(pos, end - pos);
             pos = end + 1;
             end = s.find(FIND_ROOT_OPTIONS_END, pos);
-            PRINT_ERROR_ON(end == string::npos, "Could not determine name of root node, while searching for \"" << FIND_ROOT_OPTIONS << "\" in String\n\t" << s, __LINE__);
+            PRINT_ERROR_ON(end == std::string::npos, "Could not determine name of root node, while searching for \"" << FIND_ROOT_OPTIONS << "\" in String\n\t" << s, __LINE__);
         }
         trim(rootName);
         pos = s.find(FIND_ROOT_VARS, end);
-        PRINT_ERROR_ON(pos == string::npos, "Could not find variables section of root function", __LINE__);
+        PRINT_ERROR_ON(pos == std::string::npos, "Could not find variables section of root function", __LINE__);
         ++pos;
         end = s.find(FIND_ROOT_VARS_END, pos);
-        PRINT_ERROR_ON(pos == string::npos, "Root function variables do not terminate on the same line. This is not yet supported :-(", __LINE__);
-        vector<string> variables;
-        string variablesString = s.substr(pos, end - pos);
+        PRINT_ERROR_ON(pos == std::string::npos, "Root function variables do not terminate on the same line. This is not yet supported :-(", __LINE__);
+        std::vector<std::string> variables;
+        std::string variablesString = s.substr(pos, end - pos);
         boost::split(variables, variablesString, boost::is_any_of(","), boost::token_compress_on);
         for (auto sub : variables) {
             pos = sub.find(':');
@@ -441,10 +305,10 @@ if (PREDICATE) {                                                                
         /*
          ssize_t sqlStart = -1;
          id_t mvcID = INVALID_ID;
-         string nameMVC;
+         std::string nameMVC;
          for (size_t i = 1; i < szSplitVec; ++i) {
-         string& s = trim(splitVec[i]);
-         if ((pos = s.find(FIND_SQL_MVC)) != string::npos) {
+         std::string& s = trim(splitVec[i]);
+         if ((pos = s.find(FIND_SQL_MVC)) != std::string::npos) {
          sqlStart = i + 1;
          nameMVC = s.substr(0, pos - SQL_ASSIGN_LEN);
          mvcID = nextID();
@@ -465,37 +329,37 @@ if (PREDICATE) {                                                                
          */
 
         // start graph output
-        cout << "digraph " << pathIn.stem() << " {\n\tnode [shape=box];\n";
+        std::cout << "digraph " << pathIn.stem() << " {\n\tnode [shape=box];\n";
 
         id_t mvcID = INVALID_ID;
 
         // Build graph by iterating over all lines.
-        vector<string> splitVecSub;
+        std::vector<std::string> splitVecSub;
         for (size_t i = 1; i < szSplitVec; ++i) {
-            string& s = trim(splitVec[i]);
+            std::string& s = trim(splitVec[i]);
             pos = s.find(SQL_ASSIGN);
             bool isSqlResultSet = boost::starts_with(s, SQL_RESULT_SET);
-            if (!isSqlResultSet && (pos == string::npos)) {
+            if (!isSqlResultSet && (pos == std::string::npos)) {
 #if defined(DEBUG)
-                cout << "// [DEBUG] No assignment on line " << (i + 1) << endl;
+                std::cout << "// [DEBUG] No assignment on line " << (i + 1) << endl;
 #endif
                 continue;
             }
-            string left = isSqlResultSet ? "" : s.substr(0, pos);
-            string right = isSqlResultSet ? s : s.substr(pos + SQL_ASSIGN_LEN);
+            std::string left = isSqlResultSet ? "" : s.substr(0, pos);
+            std::string right = isSqlResultSet ? s : s.substr(pos + SQL_ASSIGN_LEN);
 #if defined(VERBOSE)
-            cout << "// [VERBOSE] left: \"" << left << "\" right :\"" << right << "\"\n";
+            std::cout << "// [VERBOSE] left: \"" << left << "\" right :\"" << right << "\"\n";
 #endif
             // check node name etc.
             pos = right.find('(');
-            string nodeLabel = right.substr(0, pos);
+            std::string nodeLabel = right.substr(0, pos);
             id_t nodeID = nextID();
-            if (pos == string::npos) {
+            if (pos == std::string::npos) {
                 trim(nodeLabel, TRIM_ARGS);
                 // This is a reassignment (A_x -> A_y) or value assignment (PseudoNode -> A_x)
                 idsToNames[nodeID] = left;
                 namesToIDs[left] = nodeID;
-                if (nodeLabel.find('@') == string::npos) {
+                if (nodeLabel.find('@') == std::string::npos) {
                     // Reassignment
                     PRINT_ERROR_ON(namesToIDs.find(nodeLabel) == namesToIDs.end(), " No ID for argument \"" << nodeLabel << '"', __LINE__);
                     id_t srcID = namesToIDs[nodeLabel];
@@ -509,7 +373,7 @@ if (PREDICATE) {                                                                
                 }
             } else {
                 nodes.push_back(nodeID);
-                string nodeArgs = right.substr(pos, right.size() - pos - 1);
+                std::string nodeArgs = right.substr(pos, right.size() - pos - 1);
                 trim(nodeArgs, TRIM_ARGS);
                 replaceInString(nodeArgs, '"', '\'');
 
@@ -518,16 +382,16 @@ if (PREDICATE) {                                                                
                 }
 
                 // PRINT node
-                cout << "\tN" << nodeID << " [label=\"" << nodeLabel << "\\n" << nodeArgs << "\"";
-                if ((pos = nodeLabel.find('.')) != string::npos) {
+                std::cout << "\tN" << nodeID << " [label=\"" << nodeLabel << "\\n" << nodeArgs << "\"";
+                if ((pos = nodeLabel.find('.')) != std::string::npos) {
                     for (auto p : COLORIZE_PREFIX) {
                         if (nodeLabel.compare(0, pos, p.first) == 0) {
-                            cout << " style=filled fillcolor=" << p.second;
+                            std::cout << " style=filled fillcolor=" << p.second;
                             break;
                         }
                     }
                 }
-                cout << "];\n";
+                std::cout << "];\n";
 
                 // first parse arguments = right (in) then return values = left (out)
                 PRINT_ERROR_ON(parse(nodeID, nodeArgs, true, i + 1) != 0, " parse node arguments on line " << (i + 1), __LINE__);
@@ -565,14 +429,14 @@ if (PREDICATE) {                                                                
 
         // print values
         if (values.size()) {
-            cout << "\n\tnode [shape=star];\n";
+            std::cout << "\n\tnode [shape=star];\n";
             for (auto id : values) {
-                cout << "\tV" << id << " [label=\"" << idsToNames[id] << "\"];\n";
+                std::cout << "\tV" << id << " [label=\"" << idsToNames[id] << "\"];\n";
             }
         }
 
         // Generate unique set of arguments
-        map<id_t, id_t> argsMap;
+        std::map<id_t, id_t> argsMap;
         for (auto iter : nodeIn) {
             // for (auto itIn : itNode.second) {
             argsMap[iter.second] = iter.second;
@@ -589,54 +453,54 @@ if (PREDICATE) {                                                                
 
         // PRINT argument nodes
 #if defined(DEBUG)
-        cout << "\n\t// [DEBUG]";
+        std::cout << "\n\t// [DEBUG]";
         for (auto it : argsMap) {
-            cout << " A" << it.first;
+            std::cout << " A" << it.first;
         }
 #endif
 
-        cout << "\n\tnode [shape=ellipse]\n";
+        std::cout << "\n\tnode [shape=ellipse]\n";
         for (auto it : argsMap) {
-            cout << "\tA" << it.first << " [label=\"" << idsToNames[it.first] << "\\n" << idType[it.first] << "\"];\n";
+            std::cout << "\tA" << it.first << " [label=\"" << idsToNames[it.first] << "\\n" << idType[it.first] << "\"];\n";
         }
 
         // PRINT Incoming archs
-        cout << "\n";
+        std::cout << "\n";
         for (auto iter : nodeIn) {
             // for (auto itIn : iter.second) {
-            cout << "\tA" << iter.second << " -> N" << iter.first << ";\n";
+            std::cout << "\tA" << iter.second << " -> N" << iter.first << ";\n";
             // }
         }
         // PRINT Outgoing archs
-        cout << "\n";
+        std::cout << "\n";
         for (auto iter : nodeOut) {
             // for (auto itOut : iter.second) {
-            cout << "\tN" << iter.first << " -> A" << iter.second << ";\n";
+            std::cout << "\tN" << iter.first << " -> A" << iter.second << ";\n";
             // }
         }
         // PRINT reassignments
         if (reassign.size()) {
-            cout << "\n";
+            std::cout << "\n";
             for (auto itReassign : reassign) {
-                cout << "\tA" << itReassign.first << " -> A" << itReassign.second << ";\n";
+                std::cout << "\tA" << itReassign.first << " -> A" << itReassign.second << ";\n";
             }
         }
         // PRINT value assignemnts
         if (values.size()) {
-            cout << "\n";
+            std::cout << "\n";
             for (auto id : values) {
-                cout << "\tV" << id << " -> A" << valueAssign[id] << ";\n";
+                std::cout << "\tV" << id << " -> A" << valueAssign[id] << ";\n";
             }
         }
 
-        cout << "}" << endl;
+        std::cout << "}" << std::endl;
 
 #if defined(DEBUG) or defined(VERBOSE)
-        cout << "// [DEBUG] All found variables / BAT's / etc.: {";
+        std::cout << "// [DEBUG] All found variables / BAT's / etc.: {";
         for (auto it : namesToIDs) {
-            cout << '[' << it.first << ';' << idType[it.second] << ']';
+            std::cout << '[' << it.first << ';' << idType[it.second] << ']';
         }
-        cout << '}' << endl;
+        std::cout << '}' << endl;
 #endif
 
         return 0;

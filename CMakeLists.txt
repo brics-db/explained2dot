@@ -30,7 +30,10 @@ FIND_PACKAGE(Boost REQUIRED)
 
 SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native -Wall -Wextra -pedantic -Weffc++ -fexceptions -fnon-call-exceptions")
 
-ADD_EXECUTABLE(explained2dot src/explained2dot.cpp)
+INCLUDE_DIRECTORIES("${PROJECT_SOURCE_DIR}/src")
+file(GLOB_RECURSE SRC_FILES ${PROJECT_SOURCE_DIR}/src/*.cpp)
+
+ADD_EXECUTABLE(explained2dot ${SRC_FILES})
 SET_PROPERTY(TARGET explained2dot PROPERTY CXX_STANDARD 14)
 SET_PROPERTY(TARGET explained2dot PROPERTY CXX_STANDARD_REQUIRED ON)
 TARGET_INCLUDE_DIRECTORIES(explained2dot PUBLIC Boost_INCLUDE_DIR)
