@@ -33,7 +33,8 @@ namespace e2d {
     const std::list<std::string> IGNORED_NAMES = {"nil", "true", "false"};
     const std::list<std::string> IGNORED_OPERATORS = {"querylog.define", "language.dataflow", "language.pass"};
     const std::list<std::string> IGNORED_LINES_BEGINS = {"+", "mal", "barrier ", "exit ", "end "};
-    const std::map<std::string, std::string> COLORIZE_PREFIX = { {"algebra", "cyan"}, {"aggr", "green"}, {"batcalc", "gold"}, {"group", "orangered"}, {"sql", "gainsboro"}, {"bat", "peachpuff"}};
+    const std::map<std::string, std::string> COLORIZE_BG_PREFIX = { {"algebra", "cyan"}, {"aggr", "green"}, {"batcalc", "gold"}, {"group", "orangered"}, {"sql", "gainsboro"}, {"bat", "peachpuff"}};
+    const std::map<std::string, std::string> COLORIZE_FG_PREFIX = { {"group", "white"}};
 
     bool is_number(
             const std::string& s) {
@@ -67,8 +68,7 @@ namespace e2d {
 
 /// FROM HERE taken from the answer from
 /// http://stackoverflow.com/questions/216823/whats-the-best-way-to-trim-stdstring
-    const char* const TRIM_CHARS = " \t\n\r\f\v |";
-    const char* const TRIM_CHARS2 = " \t\n\r\f\v :";
+    const char* const TRIM_CHARS = " \t\n\r\f\v |:";
 
 // trim from end of string (right)
 
@@ -200,7 +200,13 @@ namespace e2d {
         ///////////////////////
         if (argc == 1 || CONFIG.HELP) {
             boost::filesystem::path p(argv[0]);
-            std::cerr << "Usage: " << p.filename() << " [-?|-h|--help] [--exclude-mvc] <explained file>\n\tOnly works for MonetDB!" << std::endl;
+            std::cerr << "Usage: " << p.filename() << " [-?|-h|--help] [--exclude-mvc|-m] [--compact|-c] [--exclude-result|-r] <explained file>\n";
+            std::cerr << "\tDesigned for MonetDB!\n";
+            std::cerr << "\t-?|-h|--help                  Display this help.\n";
+            std::cerr << "\t--exclude-mvc|-m              Do not include the starting mvc node, its result, and respective edges in the graph.\n";
+            std::cerr << "\t--compact|-c                  Generate a very compact graph.\n";
+            std::cerr << "\t--exclude-result|-r           Exclude SQL result set and its descriptor BATs.\n";
+            std::cerr << std::flush;
             return 1;
         }
         boost::filesystem::path pathIn(argv[argc - 1]);
@@ -343,7 +349,7 @@ namespace e2d {
 #if defined(DEBUG)
                 std::cout << "// [DEBUG] No assignment on line " << (i + 1) << endl;
 #endif
-                continue;
+                continue; // TODO: this is very clumsy handling of the bottom lines!
             }
             std::string left = isSqlResultSet ? "" : s.substr(0, pos);
             std::string right = isSqlResultSet ? s : s.substr(pos + SQL_ASSIGN_LEN);
@@ -377,21 +383,30 @@ namespace e2d {
                 trim(nodeArgs, TRIM_ARGS);
                 replaceInString(nodeArgs, '"', '\'');
 
-                if (nodeLabel.compare(FIND_SQL_MVC) == 0) {
+                bool isMVCNode = nodeLabel.compare(FIND_SQL_MVC) == 0;
+                if (isMVCNode) {
                     mvcID = nodeID;
                 }
 
-                // PRINT node
-                std::cout << "\tN" << nodeID << " [label=\"" << nodeLabel << "\\n" << nodeArgs << "\"";
-                if ((pos = nodeLabel.find('.')) != std::string::npos) {
-                    for (auto p : COLORIZE_PREFIX) {
-                        if (nodeLabel.compare(0, pos, p.first) == 0) {
-                            std::cout << " style=filled fillcolor=" << p.second;
-                            break;
+                if (!CONFIG.EXCLUDE_MVC || !isMVCNode) {
+                    // PRINT node
+                    std::cout << "\tN" << nodeID << " [label=\"" << nodeLabel << "\\n" << nodeArgs << "\"";
+                    if ((pos = nodeLabel.find('.')) != std::string::npos) {
+                        for (auto p : COLORIZE_BG_PREFIX) {
+                            if (nodeLabel.compare(0, pos, p.first) == 0) {
+                                std::cout << " style=filled fillcolor=" << p.second;
+                                break;
+                            }
+                        }
+                        for (auto p : COLORIZE_FG_PREFIX) {
+                            if (nodeLabel.compare(0, pos, p.first) == 0) {
+                                std::cout << " fontcolor=" << p.second;
+                                break;
+                            }
                         }
                     }
+                    std::cout << "];\n";
                 }
-                std::cout << "];\n";
 
                 // first parse arguments = right (in) then return values = left (out)
                 PRINT_ERROR_ON(parse(nodeID, nodeArgs, true, i + 1) != 0, " parse node arguments on line " << (i + 1), __LINE__);
@@ -402,9 +417,9 @@ namespace e2d {
         }
 
         // exclude nodes
-        if (CONFIG.DO_EXCLUDE_MVC) {
+        if (CONFIG.EXCLUDE_MVC) {
             // don't throw an error since we want to ignore it anyways
-            PRINT_ERROR_ON(mvcID == INVALID_ID, "no " << FIND_SQL_MVC << " node found!", __LINE__);
+            PRINT_WARN_ON(mvcID == INVALID_ID, "MVC node shall be excluded, but no " << FIND_SQL_MVC << " node found!", __LINE__);
             id_t mvcOutID = nodeOut.find(mvcID)->second;
             auto iter = nodeIn.begin();
             while (iter != nodeIn.end()) {

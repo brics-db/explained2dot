@@ -62,9 +62,13 @@ namespace e2d {
                 char** argv,
                 int nArg);
 
+        void update();
+
     public:
-        bool DO_EXCLUDE_MVC;
         bool HELP;
+        bool EXCLUDE_MVC;
+        bool COMPACT;
+        bool EXCLUDE_RESULT;
 
         config_t();
 

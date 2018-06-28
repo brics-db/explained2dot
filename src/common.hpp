@@ -54,4 +54,14 @@ if (PREDICATE) {                                                                
     return LINE;                                                                    \
 }
 
+#define PRINT_WARN_ON(PREDICATE, MESSAGE, LINE)                                     \
+if (PREDICATE) {                                                                    \
+    std::string filename(__FILE__);                                                 \
+    auto filesub = filename.substr(filename.rfind('/') + 1);                        \
+    std::stringstream ss;                                                           \
+    ss << "[WARN @ " << filesub << ':' << LINE << "] " << MESSAGE << std::endl;     \
+    std::cerr << ss.str();                                                          \
+    return LINE;                                                                    \
+}
+
 }

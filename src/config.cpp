@@ -26,12 +26,17 @@ namespace e2d {
 
     std::map<std::string, size_t> config_t::cmdIntArgs = {};
     std::map<std::string, std::string> config_t::cmdStrArgs = {};
-    std::map<std::string, bool> config_t::cmdBoolArgs = { {"--help", false}, {"-h", false}, {"-?", false}, {"--exclude-mvc", false}};
-    std::map<std::string, typename config_t::cmdargtype_t> config_t::cmdArgTypes = { {"--help", argbool}, {"-h", argbool}, {"-?", argbool}, {"--exclude-mvc", argbool}};
+    std::map<std::string, bool> config_t::cmdBoolArgs = { {"--help", false}, {"-h", false}, {"-?", false}, {"--exclude-mvc", false}, {"-m", false}, {"--compact", false}, {"-c", false}, {
+            "--exclude-result", false}, {"-r", false}};
+    std::map<std::string, typename config_t::cmdargtype_t> config_t::cmdArgTypes = { {"--help", argbool}, {"-h", argbool}, {"-?", argbool}, {"--exclude-mvc", argbool}, {"-m", argbool}, {"--compact",
+            argbool}, {"-c", argbool}};
 
     config_t::config_t()
-            : DO_EXCLUDE_MVC(cmdBoolArgs["--exclude-mvc"]),
-              HELP(cmdBoolArgs["--help"] | cmdBoolArgs["-h"] | cmdBoolArgs["-?"]) {
+            : HELP(),
+              EXCLUDE_MVC(),
+              COMPACT(),
+              EXCLUDE_RESULT() {
+        update();
     }
 
     size_t config_t::parseint(
@@ -115,8 +120,14 @@ namespace e2d {
                 }
             }
         }
-        DO_EXCLUDE_MVC = cmdBoolArgs["--exclude-mvc"];
+        update();
+    }
+
+    void config_t::update() {
+        EXCLUDE_MVC = cmdBoolArgs["--exclude-mvc"] | cmdBoolArgs["-m"];
         HELP = cmdBoolArgs["--help"] | cmdBoolArgs["-h"] | cmdBoolArgs["-?"];
+        COMPACT = cmdBoolArgs["--compact"] | cmdBoolArgs["-c"];
+        EXCLUDE_RESULT = cmdBoolArgs["--exclude-result"] | cmdBoolArgs["-r"];
     }
 
 }
